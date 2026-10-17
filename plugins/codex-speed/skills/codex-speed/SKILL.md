@@ -1,39 +1,34 @@
 ---
 name: codex-speed
-description: Measure Codex generation speed on demand and inspect saved benchmark history. Use for requests such as “测一下Codex速率”, “比较模型速度”, and “查测速历史”.
+description: Read generation speed from recent real Codex work, run a new benchmark only on explicit request, or inspect saved speed history.
 ---
 
-Use the bundled standard-library launcher at `<skill-root>/scripts/codex_speed.py` with local Python 3.11+. A benchmark starts one temporary Codex app-server session and consumes normal model tokens. It does not create a user-visible test chat or persisted rollout.
+Use the bundled standard-library launcher at `<skill-root>/scripts/codex_speed.py` with Python 3.11+. Invoke it directly once per request; do not probe Python, inspect the launcher, query model lists, or narrate routine steps.
 
-Run one sample by default. Omit `--model` to use the current Codex configuration. Run multiple samples or models only when requested.
+## Choose the mode
 
-```text
-python -S "<skill-root>/scripts/codex_speed.py" benchmark --timeout 600
-python -S "<skill-root>/scripts/codex_speed.py" benchmark --model <MODEL> --effort <EFFORT> --timeout 600
-```
+- For ordinary requests to check, measure, or compare recent speed, read recent real-work logs. Do not start a new generation. Omit `--model` unless the user names a model; never discover models first. The default query is bounded to two seconds and one result:
 
-Read saved results with:
+  ```text
+  python -S "<skill-root>/scripts/codex_speed.py" recent --budget-seconds 2
+  ```
 
-```text
-python -S "<skill-root>/scripts/codex_speed.py" history --limit 20
-python -S "<skill-root>/scripts/codex_speed.py" history --model <MODEL> --limit 20
-python -S "<skill-root>/scripts/codex_speed.py" show <RUN_ID>
-python -S "<skill-root>/scripts/codex_speed.py" watch --seconds 60
-```
+  On Codex Desktop for Windows, use the platform's normal-user execution option: its restricted sandbox may block read-only SQLite access. Do not probe that known limitation first. If another environment reports `state_unavailable`, `log_unavailable`, or `source_unavailable`, retry `recent` once through the platform's approved normal-user execution path. Never copy the source database, change permissions, or fall back to a benchmark.
 
-When asked to verify a new run, read recent history and use its `run_id` with `show`.
+- For a comparison across recent models, request more saved samples in the same query, for example `recent --limit 10 --budget-seconds 2`. Do not run benchmarks to fill missing models.
+- Run a benchmark only when the user explicitly asks to run a test/benchmark or asks for a new generated sample. It performs one real model call and consumes normal model tokens:
 
-## Reply format
+  ```text
+  python -S "<skill-root>/scripts/codex_speed.py" benchmark --timeout 600
+  ```
 
-- For one benchmark, report only model, generation speed, and full-turn time. If it failed, give the reason in one sentence.
-- For history, use a compact table. Include the method when records use different measurement sources.
-- Add token counts, effort, measurement details, resource use, tests, or setup details only when asked.
-- Do not print raw JSON or narrate routine tool steps.
+  Pass `--model <MODEL>` or `--effort <EFFORT>` only when requested. The benchmark uses the fixed system and user prompt in the bundled runner; keep both unchanged so results remain comparable. Do not set a different reasoning effort on the user's behalf.
+- For saved-history requests, use `history --limit 20`; use `show <RUN_ID>` for a record's details.
 
-## Measurement and history
+If no valid recent sample exists, say so in one short sentence. Never fall back to a benchmark.
 
-The launcher returns JSON. Generation TPS is reported output tokens (which may include reasoning) divided by the span from the first output-item start to the last output-item end. Full-turn time spans `turn/start` through `turn/completed` and includes waiting and generation, but not app-server startup or handshake. These are output-item estimates, not per-token TTFT/ITL measurements. If timing or usage is invalid or missing, report no valid TPS; never estimate one.
+For a recent-speed answer, write exactly one line: `本地日志：<model> <tps> token/s（<sample_time>）。` Use the returned readable sample time directly. For an explicit benchmark, give only model, TPS, and full-turn seconds. Do not add token counts, effort, exclusions, sandbox/retry details, or statements about what files/tests you did not change. Add details only when asked.
 
-History is stored at `~/.codex/codex-speed/benchmarks.sqlite3` (Windows: `%USERPROFILE%\.codex\codex-speed\benchmarks.sqlite3`). `--data-dir` or `CODEX_SPEED_DATA_DIR` overrides this database location. The database excludes prompts, answers, and raw Codex task identifiers. Use `history` or `show`, not conversation transcripts, to retrieve prior results.
+The launcher prints JSON. It saves only allowlisted measurements and excludes prompt text, answers, and raw Codex task identifiers. The history database is at `~/.codex/codex-speed/benchmarks.sqlite3` (Windows: `%USERPROFILE%\.codex\codex-speed\benchmarks.sqlite3`). `--data-dir` or `CODEX_SPEED_DATA_DIR` overrides the location.
 
-Imported `mode=import` records use local-log estimates; active `benchmark` runs use app-server output-item estimates. Label the method when comparing mixed sources. Do not present a single sample as a stable model ranking; mention this only when the user asks for a ranking or conclusion.
+Recent local-log estimates and active app-server benchmark estimates have different measurement sources. Label the source when comparing them. The active benchmark measures reported output tokens, including reasoning when present, over the first-to-last output-item span. It is not a per-token TTFT/ITL measurement; do not present a single sample as a stable ranking.

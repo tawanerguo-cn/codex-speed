@@ -261,7 +261,7 @@ def test_run_uses_ephemeral_read_only_single_turn_and_server_item_span(
     assert result["status"] == "completed"
     assert result["output_tokens"] == 100
     assert result["reasoning_output_tokens"] == 25
-    assert result["tool_version"] == "0.2.0"
+    assert result["tool_version"] == "0.3.0"
     assert result["codex_version"] == "0.123.4"
     # The union spans reasoning start through the final agent-message completion.
     assert result["stream_seconds"] == 5
@@ -294,7 +294,7 @@ def test_run_uses_ephemeral_read_only_single_turn_and_server_item_span(
     assert _OUTPUT not in repr(result)
     assert _THREAD_ID not in repr(result)
     assert _TURN_ID not in repr(result)
-    assert result["prompt_id"] == "codex_speed_v3"
+    assert result["prompt_id"] == "codex_speed_v4"
     assert (
         result["prompt_sha256"]
         == benchmark.hashlib.sha256(

@@ -1,6 +1,6 @@
 # Codex Speed
 
-按需测量 Codex 输出速率并查询历史记录。需要 Codex CLI 和 Python 3.11+。
+查最近真实工作的 Codex 生成速率；只有明确要求跑测速时，才额外生成内容。
 
 ## 安装
 
@@ -11,8 +11,10 @@ codex plugin add codex-speed@tawanerguo-codex-tools
 
 ## 使用
 
-安装后直接对 Codex 说“测一下 Codex 速率”或“查测速历史”。
+- “查一下速率”读取最近工作记录，不发起模型请求。
+- “跑一次测速”运行固定测试提示词，会消耗正常模型 token。
+- “查测速历史”查看已保存记录。
 
-生成速率按输出项时间估算，包含推理 token；整轮耗时包含模型等待。每次测速都会实际调用模型并消耗正常 token。
+无可计算的近期样本时会直接说明，不会自动改跑测速。需要 Codex CLI 和 Python 3.11+。
 
-本插件部分代码来自 [TokenPulse](https://github.com/zzccchen/token-pulse)，遵循 MIT License；版权归 TokenPulse contributors。
+本插件部分代码来自 [TokenPulse](https://github.com/zzccchen/token-pulse)，遵循 MIT License。

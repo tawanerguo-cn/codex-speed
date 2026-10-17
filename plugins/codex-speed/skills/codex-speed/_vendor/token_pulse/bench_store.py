@@ -56,6 +56,7 @@ _SAMPLE_FIELDS = {
     "effort",
     "exclusion",
     "measurement_method",
+    "timing_source",
 }
 _NULLABLE_LABELS = {
     "requested_model",
@@ -172,6 +173,9 @@ def _normalize_sample(value: object, index: int) -> dict[str, Any]:
     normalized["measurement_method"] = _code(
         sample.get("measurement_method"), "sample.measurement_method", nullable=True
     )
+    normalized["timing_source"] = _label(
+        sample.get("timing_source"), "sample.timing_source", nullable=True
+    )
     return normalized
 
 
@@ -189,8 +193,8 @@ def _normalize_record(record: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("run_id must be a UUID string") from exc
 
     mode = value.get("mode")
-    if not isinstance(mode, str) or mode not in {"benchmark", "watch", "import"}:
-        raise ValueError("mode must be benchmark, watch, or import")
+    if not isinstance(mode, str) or mode not in {"benchmark", "watch", "import", "recent"}:
+        raise ValueError("mode must be benchmark, watch, import, or recent")
     status = value.get("status")
     if not isinstance(status, str) or status not in {
         "completed",
@@ -261,10 +265,21 @@ class BenchmarkStore:
     ``speed_data_home()/benchmarks.sqlite3``.
     """
 
-    def __init__(self, path: Path | None = None, *, read_only: bool = False):
+    def __init__(
+        self,
+        path: Path | None = None,
+        *,
+        read_only: bool = False,
+        timeout: float = 5.0,
+    ):
         self.path = Path(path if path is not None else speed_data_home() / DATABASE_NAME)
         self.path = self.path.expanduser().resolve()
         self.read_only = read_only
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
+            raise ValueError("timeout must be between zero and sixty seconds")
+        if not math.isfinite(timeout) or timeout < 0 or timeout > 60:
+            raise ValueError("timeout must be between zero and sixty seconds")
+        timeout = float(timeout)
         if read_only:
             if not self.path.exists():
                 raise FileNotFoundError(f"benchmark database does not exist: {self.path}")
@@ -273,16 +288,16 @@ class BenchmarkStore:
             self.connection = sqlite3.connect(
                 f"{self.path.as_uri()}?mode=ro",
                 uri=True,
-                timeout=5.0,
+                timeout=timeout,
                 isolation_level=None,
             )
         else:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             if self.path.exists() and self.path.is_dir():
                 raise ValueError("database path must name a file")
-            self.connection = sqlite3.connect(self.path, timeout=5.0, isolation_level=None)
+            self.connection = sqlite3.connect(self.path, timeout=timeout, isolation_level=None)
         self.connection.row_factory = sqlite3.Row
-        self.connection.execute("PRAGMA busy_timeout=5000")
+        self.connection.execute(f"PRAGMA busy_timeout={int(timeout * 1000)}")
         self.connection.execute("PRAGMA foreign_keys=ON")
         try:
             if read_only:

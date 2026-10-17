@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime
 from io import StringIO
 from pathlib import Path
 from types import ModuleType
@@ -15,6 +16,12 @@ from token_pulse.bench_store import BenchmarkStore
 def _benchmark_module(run):
     module = ModuleType("token_pulse.benchmark")
     module.run = run
+    return module
+
+
+def _recent_module(query_recent):
+    module = ModuleType("token_pulse.recent")
+    module.query_recent = query_recent
     return module
 
 
@@ -81,7 +88,177 @@ assert forbidden.isdisjoint(sys.modules)
         env=env,
     )
     assert completed.returncode == 0, completed.stderr
-    assert "codex-speed 0.2.0" in completed.stdout
+    assert "codex-speed 0.3.0" in completed.stdout
+
+
+def _recent_result(**changes):
+    result = {
+        "status": "completed",
+        "mode": "recent",
+        "measurement_method": "local_log_estimate",
+        "samples": [
+            {
+                "model": "gpt-6-luna",
+                "effort": "high",
+                "output_tokens": 80,
+                "stream_seconds": 2.0,
+                "tps": 40.0,
+                "ended_at": 1_800_000_000.0,
+                "age_seconds": 3.0,
+                "stale": False,
+                "sample_key": "a" * 64,
+                "method": "stream-log+item-event",
+                "thread_id": "private-thread-id",
+            }
+        ],
+        "elapsed_seconds": 0.015,
+        "coverage": {"rollouts_scanned": 2, "excluded": {"missing_start": 1}},
+        "diagnostics": [],
+        "private_prompt": "must-not-be-printed",
+    }
+    result.update(changes)
+    return result
+
+
+def test_recent_sample_time_has_local_timezone_offset():
+    result = speed._normalize_recent_result(_recent_result())
+    sample = result["samples"][0]
+    parsed = datetime.fromisoformat(sample["sample_time"])
+    assert sample["sample_time"] == datetime.fromtimestamp(sample["ended_at"]).astimezone().isoformat(
+        timespec="seconds"
+    )
+    assert parsed.tzinfo is not None
+    assert parsed.utcoffset() is not None
+
+
+def test_recent_sample_time_is_null_for_out_of_range_timestamp():
+    raw = _recent_result()
+    raw["samples"][0]["ended_at"] = 1e100
+    result = speed._normalize_recent_result(raw)
+    assert result["samples"][0]["sample_time"] is None
+
+
+def test_recent_is_default_and_explicit_command_queries_logs_and_deduplicates(tmp_path, monkeypatch):
+    calls = []
+
+    def query_recent(source, *, model, limit, budget_seconds):
+        calls.append((source, model, limit, budget_seconds))
+        return _recent_result()
+
+    monkeypatch.setitem(sys.modules, "token_pulse.recent", _recent_module(query_recent))
+    monkeypatch.setitem(
+        sys.modules,
+        "token_pulse.benchmark",
+        _benchmark_module(lambda **_kwargs: pytest.fail("recent must not benchmark")),
+    )
+
+    default_code, default_output, default_err = _invoke(
+        ["--data-dir", str(tmp_path), "--codex-home", str(tmp_path / "codex-home")]
+    )
+    explicit_code, explicit_output, explicit_err = _invoke(
+        ["recent", "--data-dir", str(tmp_path), "--model", "gpt-6-luna", "--limit", "1"]
+    )
+    default = json.loads(default_output)
+    explicit = json.loads(explicit_output)
+
+    assert default_code == explicit_code == 0
+    assert default_err == explicit_err == ""
+    assert len(default_output.splitlines()) == len(explicit_output.splitlines()) == 1
+    assert default["status"] == explicit["status"] == "completed"
+    assert default["history_saved"] is explicit["history_saved"] is True
+    assert default["samples"][0]["tps"] == 40.0
+    assert default["samples"][0]["age_seconds"] == 3.0
+    assert default["samples"][0]["stale"] is False
+    assert "sample_key" not in default_output
+    assert default["coverage"]["excluded"] == {"missing_start": 1}
+    assert "private-thread-id" not in default_output
+    assert "must-not-be-printed" not in default_output
+    assert len(calls) == 2
+    assert calls[0] == ((tmp_path / "codex-home").resolve(), None, 1, 2.0)
+    assert calls[1][1:] == ("gpt-6-luna", 1, 2.0)
+
+    with BenchmarkStore(tmp_path / "benchmarks.sqlite3", read_only=True) as store:
+        history = store.list_runs(limit=10)
+        assert len(history) == 1
+        record = store.get(history[0]["run_id"])
+    assert record["mode"] == "recent"
+    assert record["measurement_method"] == "local_log_estimate"
+    assert record["requested_model"] is None
+    assert record["observed_model"] == "gpt-6-luna"
+    assert record["output_tokens"] == 80
+    assert record["stream_seconds"] == 2.0
+    assert record["end_to_end_seconds"] is None
+    assert record["input_tokens"] is None
+    assert record["started_at"] is None
+    assert record["samples"][0]["effort"] == "high"
+    assert record["samples"][0]["started_at"] is None
+    assert record["samples"][0]["timing_source"] == "stream-log+item-event"
+
+
+def test_recent_no_save_avoids_history_database_and_returns_structured_no_samples(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setitem(
+        sys.modules,
+        "token_pulse.recent",
+        _recent_module(
+            lambda *_args, **_kwargs: {
+                "status": "no_samples",
+                "mode": "recent",
+                "samples": [],
+                "elapsed_seconds": 0.01,
+                "coverage": {"rollouts_scanned": 0},
+                "diagnostics": [],
+            }
+        ),
+    )
+    code, output, _ = _invoke(["recent", "--data-dir", str(tmp_path), "--no-save"])
+    result = json.loads(output)
+    assert code == 0
+    assert result["status"] == "no_samples"
+    assert result["samples"] == []
+    assert result["history_saved"] is None
+    assert not (tmp_path / "benchmarks.sqlite3").exists()
+
+
+def test_recent_persistence_failure_does_not_hide_measurement_or_leak_exception(monkeypatch):
+    secret = "private-db-path"
+    monkeypatch.setitem(
+        sys.modules,
+        "token_pulse.recent",
+        _recent_module(lambda *_args, **_kwargs: _recent_result()),
+    )
+
+    def broken_store(*_args, **_kwargs):
+        raise OSError(secret)
+
+    monkeypatch.setattr(speed, "_open_store", broken_store)
+    code, output, _ = _invoke(["recent"])
+    result = json.loads(output)
+    assert code == 0
+    assert result["samples"][0]["tps"] == 40.0
+    assert result["history_saved"] is False
+    assert secret not in output
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["recent", "--limit", "0"],
+        ["recent", "--limit", "1001"],
+        ["recent", "--budget-seconds", "nan"],
+        ["--budget-seconds", "0"],
+    ],
+)
+def test_invalid_recent_values_fail_before_querying_logs(args, monkeypatch):
+    monkeypatch.setitem(
+        sys.modules,
+        "token_pulse.recent",
+        _recent_module(lambda *_args, **_kwargs: pytest.fail("invalid args queried logs")),
+    )
+    with pytest.raises(SystemExit) as exc:
+        speed.main(args, stdout=StringIO(), stderr=StringIO())
+    assert exc.value.code == 2
 
 
 @pytest.mark.parametrize(

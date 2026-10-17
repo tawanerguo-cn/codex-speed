@@ -51,6 +51,7 @@ def record(**changes):
                 "effort": "xhigh",
                 "exclusion": None,
                 "measurement_method": "stream-log",
+                "timing_source": None,
             }
         ],
     }
@@ -75,6 +76,33 @@ def test_save_get_and_reopen_preserves_full_allowlisted_run(tmp_path):
     assert connection.execute("SELECT count(*) FROM runs").fetchone()[0] == 1
     assert connection.execute("SELECT count(*) FROM samples").fetchone()[0] == 1
     connection.close()
+
+
+def test_recent_history_mode_is_allowlisted_and_short_timeout_is_supported(tmp_path):
+    path = tmp_path / "recent.sqlite3"
+    recent = record(
+        run_id=str(uuid.uuid5(uuid.NAMESPACE_URL, "sample")),
+        mode="recent",
+        prompt_id=None,
+        prompt_sha256=None,
+        tool_version=None,
+        codex_version=None,
+        provider=None,
+        service_tier=None,
+        input_tokens=None,
+        cached_input_tokens=None,
+        reasoning_output_tokens=None,
+        end_to_end_seconds=None,
+        first_output_seconds=None,
+        end_to_end_tps=None,
+    )
+    with BenchmarkStore(path, timeout=0.05) as store:
+        assert store.save(recent) == recent
+    with BenchmarkStore(path, read_only=True, timeout=0.05) as store:
+        assert store.get(recent["run_id"]) == recent
+
+    with pytest.raises(ValueError, match="zero and sixty"):
+        BenchmarkStore(tmp_path / "invalid.sqlite3", timeout=61)
 
 
 def test_read_only_reads_without_changing_database_and_rejects_writes(tmp_path):

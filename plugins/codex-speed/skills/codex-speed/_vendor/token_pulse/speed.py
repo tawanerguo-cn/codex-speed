@@ -1,4 +1,4 @@
-"""Small, headless command line for explicit Codex speed measurements."""
+"""Small, headless command line for Codex speed queries and benchmarks."""
 
 from __future__ import annotations
 
@@ -11,14 +11,16 @@ import sys
 import time
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
 from pathlib import Path
 from typing import Any, TextIO
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 _MAX_LIMIT = 1000
 _SAFE_CODE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,99}\Z")
 _UUID_LIKE = re.compile(r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}\Z")
 _SAFE_LABEL = re.compile(r"[\w .:+@-]{1,100}\Z", re.UNICODE)
+_SAFE_HASH = re.compile(r"[0-9a-f]{64}\Z")
 
 
 def _positive_finite(value: str) -> float:
@@ -68,6 +70,13 @@ def _safe_number(value: object) -> float | int | None:
     if not finite or value < 0:
         return None
     return value
+
+
+def _local_sample_time(value: float) -> str | None:
+    try:
+        return datetime.fromtimestamp(value).astimezone().isoformat(timespec="seconds")
+    except (OSError, OverflowError, ValueError):
+        return None
 
 
 def _safe_count(value: object) -> int:
@@ -130,12 +139,16 @@ def _database_path(data_dir: Path | None) -> Path:
     return root / DATABASE_NAME
 
 
-def _open_store(data_dir: Path | None, *, read_only: bool = False):
+def _open_store(
+    data_dir: Path | None, *, read_only: bool = False, timeout: float = 5.0
+):
     from token_pulse.bench_store import BenchmarkStore
 
     path = _database_path(data_dir)
     if read_only:
         return BenchmarkStore(path, read_only=True)
+    if timeout != 5.0:
+        return BenchmarkStore(path, timeout=timeout)
     return BenchmarkStore(path)
 
 
@@ -578,24 +591,232 @@ def _export(args: argparse.Namespace, stdout: TextIO) -> int:
         return 2
 
 
+def _normalize_recent_result(raw: object) -> dict[str, Any]:
+    """Keep recent-log output to safe measurement metadata only."""
+    result: dict[str, Any] = {
+        "status": "source_unavailable",
+        "mode": "recent",
+        "measurement_method": "local_log_estimate",
+        "samples": [],
+        "elapsed_seconds": None,
+        "coverage": {},
+        "diagnostics": [],
+    }
+    if not isinstance(raw, dict):
+        result["diagnostics"] = ["recent_failed"]
+        return result
+    if raw.get("status") in {"completed", "no_samples", "source_unavailable"}:
+        result["status"] = raw["status"]
+    result["elapsed_seconds"] = _safe_number(raw.get("elapsed_seconds"))
+    diagnostics = raw.get("diagnostics")
+    result["diagnostics"] = _safe_codes(diagnostics)
+
+    coverage = raw.get("coverage")
+    if isinstance(coverage, dict):
+        safe_coverage = {}
+        for key, value in coverage.items():
+            if not isinstance(key, str) or _safe_code(key) is None:
+                continue
+            number = _safe_number(value)
+            if number is not None:
+                safe_coverage[key] = number
+            elif key == "excluded":
+                safe_coverage[key] = _safe_exclusions(value)
+        result["coverage"] = safe_coverage
+
+    rows = raw.get("samples")
+    if not isinstance(rows, list):
+        result["status"] = "source_unavailable"
+        result["diagnostics"] = result["diagnostics"] or ["recent_failed"]
+        return result
+    samples: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        sample_key = row.get("sample_key")
+        model = _safe_label(row.get("model"))
+        effort = _safe_label(row.get("effort"))
+        tokens = _optional_count(row.get("output_tokens"))
+        seconds = _safe_number(row.get("stream_seconds"))
+        tps = _safe_number(row.get("tps"))
+        ended_at = _safe_number(row.get("ended_at"))
+        age_seconds = _safe_number(row.get("age_seconds"))
+        stale = row.get("stale") if type(row.get("stale")) is bool else None
+        method = _safe_label(row.get("method"))
+        if (
+            not isinstance(sample_key, str)
+            or _SAFE_HASH.fullmatch(sample_key) is None
+            or tokens is None
+            or tokens <= 0
+            or seconds is None
+            or seconds <= 0
+            or tps is None
+            or tps <= 0
+            or ended_at is None
+            or ended_at <= 0
+        ):
+            continue
+        samples.append(
+            {
+                "model": model,
+                "effort": effort,
+                "output_tokens": tokens,
+                "stream_seconds": seconds,
+                "tps": tps,
+                "ended_at": ended_at,
+                "sample_time": _local_sample_time(ended_at),
+                "age_seconds": age_seconds,
+                "stale": stale,
+                "sample_key": sample_key,
+                "method": method,
+            }
+        )
+    result["samples"] = samples
+    if samples:
+        result["status"] = "completed"
+    elif result["status"] == "completed":
+        result["status"] = "no_samples"
+    return result
+
+
+def _recent_record(sample: dict[str, Any]) -> dict[str, Any]:
+    """Build a deduplicated, content-free history row for one log sample."""
+    ended_at = sample["ended_at"]
+    seconds = sample["stream_seconds"]
+    model = sample["model"]
+    effort = sample["effort"]
+    tokens = sample["output_tokens"]
+    tps = sample["tps"]
+    identity = json.dumps(
+        [sample["sample_key"], model, effort, tokens, seconds, tps, ended_at],
+        ensure_ascii=True,
+        allow_nan=False,
+        separators=(",", ":"),
+    )
+    return {
+        "run_id": str(
+            uuid.uuid5(uuid.NAMESPACE_URL, f"codex-speed-recent:{identity}")
+        ),
+        "created_at": ended_at,
+        "started_at": None,
+        "ended_at": ended_at,
+        "mode": "recent",
+        "requested_model": None,
+        "observed_model": model,
+        "effort": effort,
+        "status": "completed",
+        "output_tokens": tokens,
+        "stream_seconds": seconds,
+        "tps": tps,
+        "measurement_method": "local_log_estimate",
+        "valid_samples": 1,
+        "excluded_samples": 0,
+        "samples": [
+            {
+                "output_tokens": tokens,
+                "started_at": None,
+                "ended_at": ended_at,
+                "seconds": seconds,
+                "tps": tps,
+                "model": model,
+                "effort": effort,
+                "measurement_method": "local_log_estimate",
+                "timing_source": sample["method"],
+            }
+        ],
+    }
+
+
+def _recent(args: argparse.Namespace, stdout: TextIO) -> int:
+    from token_pulse.recent import query_recent
+
+    try:
+        raw = query_recent(
+            _source_path(args.codex_home),
+            model=args.model,
+            limit=args.limit,
+            budget_seconds=args.budget_seconds,
+        )
+    except Exception:
+        raw = {
+            "status": "source_unavailable",
+            "samples": [],
+            "diagnostics": ["recent_failed"],
+        }
+    result = _normalize_recent_result(raw)
+    result["samples"] = result["samples"][: args.limit]
+    rows = [_recent_record(sample) for sample in result["samples"]]
+    history_saved: bool | None = None
+    if rows and not args.no_save:
+        try:
+            with _open_store(args.data_dir, timeout=0.05) as store:
+                for row in rows:
+                    store.save(row)
+            history_saved = True
+        except Exception:
+            # The source logs remain authoritative; an unavailable history DB must
+            # never hide a measurement or trigger a second model request.
+            history_saved = False
+    result["history_saved"] = history_saved
+    for sample in result["samples"]:
+        sample.pop("sample_key", None)
+    _json_line(result, stdout)
+    return 0 if result["status"] in {"completed", "no_samples"} else 2
+
+
 def _add_data_dir(parser: argparse.ArgumentParser, *, default: object = argparse.SUPPRESS) -> None:
     parser.add_argument(
         "--data-dir",
         type=Path,
         default=default,
-        help="directory for this tool's local benchmark history",
+        help="directory for this tool's local speed history",
+    )
+
+
+def _add_recent_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--model", default=argparse.SUPPRESS, help="filter by model")
+    parser.add_argument(
+        "--limit",
+        type=_bounded_limit,
+        default=argparse.SUPPRESS,
+        help="number of recent samples (default: 1)",
+    )
+    parser.add_argument(
+        "--budget-seconds",
+        type=_positive_finite,
+        default=argparse.SUPPRESS,
+        help="maximum log query time (default: 2)",
+    )
+    parser.add_argument(
+        "--codex-home",
+        type=Path,
+        default=argparse.SUPPRESS,
+        help="Codex data directory (defaults to CODEX_HOME or ~/.codex)",
+    )
+    parser.add_argument(
+        "--no-save",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="skip saving returned samples to local history",
     )
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="codex-speed",
-        description="Measure Codex output speed on demand and keep a local run history.",
+        description="Read recent Codex output speed or run a controlled benchmark.",
         allow_abbrev=False,
     )
     parser.add_argument("--version", action="version", version=f"codex-speed {VERSION}")
     _add_data_dir(parser, default=None)
-    commands = parser.add_subparsers(dest="command", required=True)
+    _add_recent_arguments(parser)
+    commands = parser.add_subparsers(dest="command", required=False)
+
+    recent = commands.add_parser(
+        "recent", help="read the latest completed outputs from Codex logs"
+    )
+    _add_data_dir(recent)
+    _add_recent_arguments(recent)
 
     benchmark = commands.add_parser("benchmark", help="run a controlled Codex benchmark")
     _add_data_dir(benchmark)
@@ -638,6 +859,14 @@ def main(
     out = stdout or sys.stdout
     err = stderr or sys.stderr
     args = _parser().parse_args(argv)
+    args.command = args.command or "recent"
+    args.model = getattr(args, "model", None)
+    args.limit = getattr(args, "limit", 1)
+    args.budget_seconds = getattr(args, "budget_seconds", 2.0)
+    args.codex_home = getattr(args, "codex_home", None)
+    args.no_save = getattr(args, "no_save", False)
+    if args.command == "recent":
+        return _recent(args, out)
     if args.command == "benchmark":
         return _benchmark(args, out)
     if args.command == "watch":

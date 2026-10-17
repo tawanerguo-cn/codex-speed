@@ -22,20 +22,21 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-_TOOL_VERSION = "0.2.0"
-_PROMPT_ID = "codex_speed_v3"
+_TOOL_VERSION = "0.3.0"
+_PROMPT_ID = "codex_speed_v4"
 _BASE_INSTRUCTIONS = (
-    "Single-turn speed benchmark. Answer the user's request directly. "
-    "Do not call tools, use MCP, or delegate."
+    "You are performing a controlled, single-turn text-generation benchmark. "
+    "Follow the configured model and reasoning-effort settings; do not request a different "
+    "effort or reveal private chain-of-thought. Answer directly without making a plan or "
+    "providing a preamble. Do not call tools or MCP, browse or research, inspect or create "
+    "files, delegate, start another session, or ask questions."
 )
 _PROMPT = (
-    "Write about 700 words in English as a clear, vivid account of a small home garden "
-    "changing through the four seasons. Follow one modest garden from the first signs of "
-    "spring to winter rest. Describe plausible plants, weather, soil, light, insects, birds, "
-    "and a few simple gardening tasks. Keep the details coherent and grounded, with a calm "
-    "observational tone, varied sentences, and a natural beginning and ending. Avoid headings, "
-    "lists, invented statistics, and a preamble. This is a single-turn speed benchmark: do not "
-    "call tools, inspect files, use MCP, delegate, or ask questions."
+    "Write an approximately 700-word account in English of one small home garden changing "
+    "through the four seasons, from the first signs of spring to winter rest. Describe plausible "
+    "plants, weather, soil, light, insects, birds, and a few simple gardening tasks. Keep the "
+    "details coherent and grounded, with a calm observational tone, varied sentences, and a "
+    "natural beginning and ending. Use no headings, lists, invented statistics, or preamble."
 )
 _PROMPT_SHA256 = hashlib.sha256(f"{_BASE_INSTRUCTIONS}\n\n{_PROMPT}".encode()).hexdigest()
 _MAX_EVENTS = 4096

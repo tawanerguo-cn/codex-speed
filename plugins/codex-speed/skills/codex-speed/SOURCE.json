@@ -1,11 +1,13 @@
 {
   "bundled_modules": [
+    "token_pulse.__init__",
     "token_pulse.backfill",
     "token_pulse.bench_store",
     "token_pulse.benchmark",
     "token_pulse.collector",
     "token_pulse.domain",
     "token_pulse.logs",
+    "token_pulse.recent",
     "token_pulse.rollout",
     "token_pulse.speed",
     "token_pulse.stats",
@@ -14,12 +16,30 @@
     "token_pulse.watch"
   ],
   "plugin": "codex-speed",
-  "plugin_version": "0.2.0",
+  "plugin_version": "0.3.0",
   "runtime_dependencies": [],
-  "source_base_commit": "edc27b1ab28709e6906667ef50decf12c7002e35",
-  "source_overlay_sha256": "ba8b20695d8ae43d9d1674429ae4707ac67917655fe5003223f85dd7cb68162c",
+  "runtime_files_sha256": {
+    "skills/codex-speed/_vendor/token_pulse/__init__.py": "80de142a7f2e448442d625db8ca5af065eb0edbca0f6ef240404b69e92b7a759",
+    "skills/codex-speed/_vendor/token_pulse/backfill.py": "257a7eab2c74069f3da492bdfc6f3ef48095bff664459607143d82735fdf32f8",
+    "skills/codex-speed/_vendor/token_pulse/bench_store.py": "73f164625b0876af328fbccd784830456471f5007cd8f2b05cefd69836e8916f",
+    "skills/codex-speed/_vendor/token_pulse/benchmark.py": "5714f3636c1aa76f0d4f511dd14435c534ebc62501f25b68aca1f393cd9bf5e8",
+    "skills/codex-speed/_vendor/token_pulse/collector.py": "7562ae2d3b9653f9d5282865c0a9338934afacf5b69b7c574e6276b5679c348d",
+    "skills/codex-speed/_vendor/token_pulse/domain.py": "a9416dc1c350412b1df24e0376054d96c094f34ec281ae2a658a6fe9476e5967",
+    "skills/codex-speed/_vendor/token_pulse/logs.py": "2135cb7c11777f7b38da81acb028caff4fbd89aaf9f76b0de93c21714bf0888b",
+    "skills/codex-speed/_vendor/token_pulse/recent.py": "b799e0ee670bd1abba6a13a9ae1b25af858f1568caa4734c62fcf387ed55c5da",
+    "skills/codex-speed/_vendor/token_pulse/rollout.py": "fbddd8346e24ae6633f5434283340d33b610b7790f77049d588fab3e5c8af5e5",
+    "skills/codex-speed/_vendor/token_pulse/speed.py": "d7651a7de741f46e560e24d6fe544ccb0910bbd45142fd724dd64ddade8f1204",
+    "skills/codex-speed/_vendor/token_pulse/stats.py": "0da9933b38a6bcc9455169430f25ff6331ee7c9aa41f12df547dd32610b855f6",
+    "skills/codex-speed/_vendor/token_pulse/submissions.py": "0a6c9738cb5c9d29547e0e03cdafabc9811ad4076e21329e9b71ada141c7343d",
+    "skills/codex-speed/_vendor/token_pulse/tailer.py": "e64321ecc5605b1894aa16960f020d5c4208cedbf45dda511b5fd7b589b4d3cf",
+    "skills/codex-speed/_vendor/token_pulse/watch.py": "63b9572fe8628972884501b677d270e901c5239b5a8d7eba02041b70eefeb39e"
+  },
   "source_project": "TokenPulse",
-  "source_repository": "https://github.com/zzccchen/token-pulse",
+  "source_repository": "https://github.com/tawanerguo-cn/codex-speed",
   "source_version": "0.1.1",
+  "upstream_base_commit": "edc27b1ab28709e6906667ef50decf12c7002e35",
+  "upstream_overlay_sha256": "ba8b20695d8ae43d9d1674429ae4707ac67917655fe5003223f85dd7cb68162c",
+  "upstream_repository": "https://github.com/zzccchen/token-pulse",
+  "upstream_source_version": "0.1.1",
   "working_tree_modified": true
 }
