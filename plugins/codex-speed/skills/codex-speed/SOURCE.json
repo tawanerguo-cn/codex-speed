@@ -1,0 +1,25 @@
+{
+  "bundled_modules": [
+    "token_pulse.backfill",
+    "token_pulse.bench_store",
+    "token_pulse.benchmark",
+    "token_pulse.collector",
+    "token_pulse.domain",
+    "token_pulse.logs",
+    "token_pulse.rollout",
+    "token_pulse.speed",
+    "token_pulse.stats",
+    "token_pulse.submissions",
+    "token_pulse.tailer",
+    "token_pulse.watch"
+  ],
+  "plugin": "codex-speed",
+  "plugin_version": "0.2.0",
+  "runtime_dependencies": [],
+  "source_base_commit": "edc27b1ab28709e6906667ef50decf12c7002e35",
+  "source_overlay_sha256": "ba8b20695d8ae43d9d1674429ae4707ac67917655fe5003223f85dd7cb68162c",
+  "source_project": "TokenPulse",
+  "source_repository": "https://github.com/zzccchen/token-pulse",
+  "source_version": "0.1.1",
+  "working_tree_modified": true
+}

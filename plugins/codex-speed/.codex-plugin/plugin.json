@@ -1,0 +1,9 @@
+{
+  "name": "codex-speed",
+  "version": "0.2.0",
+  "description": "Measure Codex generation speed on demand and inspect local benchmark history.",
+  "license": "MIT",
+  "keywords": ["codex", "benchmark", "tokens-per-second"],
+  "skills": "./skills/",
+  "requires_local_executor": true
+}
