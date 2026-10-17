@@ -413,4 +413,3 @@ def test_budget_stops_between_bounded_rollout_reads(tmp_path: Path, monkeypatch:
     assert len(calls) == 1
     assert "time_budget_exhausted" in result["diagnostics"]
     assert result["coverage"]["bytes_read"] <= 2 * 1024 * 1024
-

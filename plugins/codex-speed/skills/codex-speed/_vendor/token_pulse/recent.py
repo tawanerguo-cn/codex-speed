@@ -629,4 +629,3 @@ def _load_log_starts(root: Path, needs: dict[str, list[str]], evidence: LogEvide
             coverage["diagnostic_item_ids"] = sum(len(values) for values in needs.values())
     except (OSError, sqlite3.Error, TypeError, ValueError):
         diagnostics.add("log_unavailable")
-
